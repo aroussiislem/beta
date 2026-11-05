@@ -1,0 +1,169 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// USER MANAGEMENT
+// ========================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  DEVELOPER
+  CLIENT      // ← Clients are users with this role
+  ACCOUNTANT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  password      String    // bcrypt hashed
+  role          UserRole  @default(CLIENT)
+  
+  // Profile fields
+  avatar        String?
+  phone         String?
+  company       String?   // Only for CLIENT role users
+  address       String?   // Only for CLIENT role users
+  isActive      Boolean   @default(true)
+  
+  // Relations
+  createdTickets Ticket[] @relation("TicketCreator")
+  assignedTickets Ticket[] @relation("AssignedDeveloper")
+  timerSessions TimerSession[]
+  comments      Comment[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([role])
+}
+
+// ========================================
+// TICKET MANAGEMENT
+// ========================================
+
+enum TicketStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketComplexity {
+  SIMPLE        // 1.0x
+  MEDIUM        // 1.5x
+  COMPLEX       // 2.0x
+  VERY_COMPLEX  // 2.5x
+}
+
+model Ticket {
+  id                String            @id @default(cuid())
+  ticketNumber      String            @unique // SP-0001, SP-0002, etc.
+  
+  // Basic Info
+  title             String
+  description       String            @db.Text
+  priority          TicketPriority    @default(MEDIUM)
+  status            TicketStatus      @default(NEW)
+  
+  // Creator (Client)
+  createdById       String
+  createdBy         User              @relation("TicketCreator", fields: [createdById], references: [id])
+  
+  // Assignment
+  assignedToId      String?
+  assignedTo        User?             @relation("AssignedDeveloper", fields: [assignedToId], references: [id])
+  assignedAt        DateTime?
+  
+  // Time Tracking
+  estimatedHours    Float?            // Optional estimate
+  actualHours       Float             @default(0) // Sum of timer sessions
+  
+  // Pricing
+  complexity        TicketComplexity  @default(SIMPLE)
+  hourlyRate        Float             @default(50.00)
+  calculatedPrice   Float             @default(0) // Auto-calculated
+  
+  // Relations
+  timerSessions     TimerSession[]
+  comments          Comment[]
+  
+  // Timestamps
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  resolvedAt        DateTime?
+  closedAt          DateTime?
+
+  @@index([ticketNumber])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([priority])
+}
+
+// ========================================
+// TIMER SESSIONS
+// ========================================
+
+model TimerSession {
+  id          String    @id @default(cuid())
+  
+  ticketId    String
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Float     @default(0) // in hours
+  notes       String?   @db.Text
+  
+  createdAt   DateTime  @default(now())
+
+  @@index([ticketId])
+  @@index([userId])
+}
+
+// ========================================
+// COMMENTS
+// ========================================
+
+model Comment {
+  id          String      @id @default(cuid())
+  
+  ticketId    String
+  ticket      Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  
+  content     String      @db.Text
+  isInternal  Boolean     @default(false) // true = only visible to team
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([ticketId])
+}
